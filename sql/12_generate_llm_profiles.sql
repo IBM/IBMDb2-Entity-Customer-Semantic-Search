@@ -89,12 +89,11 @@ FROM CUSTOMER_LLM_PROFILE;
 -- Show sample of generated profiles
 SELECT
     CUSTOMER_SK,
-    CUSTOMER_ID,
-    SUBSTR(PROFILE_TEXT, 1, 300) || '...' AS PROFILE_PREVIEW,
+    SUBSTR(PROFILE_TEXT, 1, 5000) || '...' AS PROFILE_PREVIEW,
     PROFILE_SIZE
 FROM CUSTOMER_LLM_PROFILE
 ORDER BY CUSTOMER_SK
-FETCH FIRST 3 ROWS ONLY;
+FETCH FIRST 1 ROWS ONLY;
 
 -- ============================================================================
 -- Statistics

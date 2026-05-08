@@ -22,6 +22,14 @@
 SET SCHEMA CUSTOMER_SEARCH;
 
 -- ============================================================================
+-- Clean Up: Delete existing JSON docs
+-- ============================================================================
+-- Ignore warning if table is empty
+UPDATE COMMAND OPTIONS USING s OFF;
+DELETE FROM CUSTOMER_JSON_DOCS;
+UPDATE COMMAND OPTIONS USING s ON;
+
+-- ============================================================================
 -- Generate JSON Documents for Each Customer
 -- ============================================================================
 -- This creates a comprehensive JSON document for each customer including:
@@ -267,7 +275,7 @@ SELECT 'Total JSON documents: ' || COUNT(*) AS COUNT FROM CUSTOMER_JSON_DOCS;
 SELECT 
     CUSTOMER_SK,
     CUSTOMER_ID,
-    SUBSTR(JSON_DOCUMENT, 1, 500) AS JSON_SAMPLE
+    SUBSTR(JSON_DOCUMENT, 1, 2500) AS JSON_SAMPLE
 FROM CUSTOMER_JSON_DOCS
 WHERE CUSTOMER_SK = 1;
 

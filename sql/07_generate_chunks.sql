@@ -22,6 +22,16 @@
 SET SCHEMA CUSTOMER_SEARCH;
 
 -- ============================================================================
+-- Clean Up: Delete existing chunks
+-- ============================================================================
+-- Ignore warning if table is empty
+UPDATE COMMAND OPTIONS USING s OFF;
+DELETE FROM CUSTOMER_TEXT_CHUNKS;
+UPDATE COMMAND OPTIONS USING s ON;
+
+COMMIT;
+
+-- ============================================================================
 -- Generate Text Chunks from JSON Documents
 -- ============================================================================
 -- We create separate chunks for different aspects of the customer profile:
@@ -148,10 +158,9 @@ ORDER BY CHUNK_TYPE;
 SELECT 
     CHUNK_ID,
     CUSTOMER_SK,
-    CUSTOMER_ID,
     CHUNK_SEQUENCE,
-    CHUNK_TYPE,
-    SUBSTR(CHUNK_TEXT, 1, 200) AS CHUNK_SAMPLE,
+    SUBSTR(CHUNK_TYPE, 1, 15) AS CHUNK_TYPE,
+    SUBSTR(CHUNK_TEXT, 1, 300) AS CHUNK_SAMPLE,
     CHUNK_SIZE
 FROM CUSTOMER_TEXT_CHUNKS
 WHERE CUSTOMER_SK = 1

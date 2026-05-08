@@ -27,30 +27,66 @@ SET SCHEMA CUSTOMER_SEARCH;
 -- Search across different aspects of customer profiles
 -- Aggregate results from different chunk types
 
--- QUERY: "Customer who returns items frequently and shops at multiple stores"
--- EXPECTED RESULTS: Customers matching on multiple aspects (returns + store diversity)
--- Shows customers with matches across 2+ chunk types (items, stores, spending)
+-- QUERY: "Customer who purchases electronics and technology products"
+-- EXPECTED RESULTS: Customers with high electronics/tech spending in their purchase history
 WITH QUERY_EMBEDDING AS (
     SELECT TO_EMBEDDING(
-        'Customer who returns items frequently and shops at multiple stores'
+        'Customer who purchases electronics and technology products'
         USING GRANITE30
     ) AS QUERY_VECTOR
     FROM SYSIBM.SYSDUMMY1
 )
 SELECT
     C.CUSTOMER_SK,
-    C.CUSTOMER_ID,
-    COUNT(DISTINCT C.CHUNK_TYPE) AS ASPECTS,
-    CAST(MIN(VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN)) AS DECIMAL(8,2)) AS BEST_DIST,
-    CAST(AVG(VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN)) AS DECIMAL(8,2)) AS AVG_DIST,
-    SUBSTR(LISTAGG(C.CHUNK_TYPE, ',') WITHIN GROUP (ORDER BY C.CHUNK_TYPE), 1, 30) AS TYPES
+    SUBSTR(C.CHUNK_TYPE, 1, 15) AS CHUNK_TYPE,
+    SUBSTR(C.CHUNK_TEXT, 1, 150) AS CHUNK_PREVIEW,
+    CAST(VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) AS DECIMAL(8,2)) AS DISTANCE
 FROM CUSTOMER_TEXT_CHUNKS C
 CROSS JOIN QUERY_EMBEDDING Q
 WHERE C.EMBEDDING IS NOT NULL
-AND VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) < 100
-GROUP BY C.CUSTOMER_SK, C.CUSTOMER_ID
-HAVING COUNT(DISTINCT C.CHUNK_TYPE) >= 2
-ORDER BY BEST_DIST ASC
+ORDER BY VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) ASC
+FETCH FIRST 10 ROWS ONLY;
+
+-- QUERY: "Customer 
+-- EXPECTED RESULTS: Customers matching on multiple aspects (returns + store diversity)
+-- Shows customers with matches across 2+ chunk types (items, stores)
+WITH QUERY_EMBEDDING AS (
+    SELECT TO_EMBEDDING(
+        'Purchase for electronics and technology products in canadian stores'
+        USING GRANITE30
+    ) AS QUERY_VECTOR
+    FROM SYSIBM.SYSDUMMY1
+)
+SELECT
+    C.CUSTOMER_SK,
+    SUBSTR(C.CHUNK_TYPE, 1, 15) AS CHUNK_TYPE,
+    SUBSTR(C.CHUNK_TEXT, 1, 150) AS CHUNK_PREVIEW,
+    CAST(VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) AS DECIMAL(8,2)) AS DISTANCE
+FROM CUSTOMER_TEXT_CHUNKS C
+CROSS JOIN QUERY_EMBEDDING Q
+WHERE C.EMBEDDING IS NOT NULL
+ORDER BY VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) ASC
+FETCH FIRST 10 ROWS ONLY;
+
+-- QUERY: "rns items frequently and shops at multiple stores"
+-- EXPECTED RESULTS: Customers matching on multiple aspects (returns + store diversity)
+-- Shows customers with matches across 2+ chunk types (items, stores, spending)
+WITH QUERY_EMBEDDING AS (
+    SELECT TO_EMBEDDING(
+        'technology products Canada'
+        USING GRANITE30
+    ) AS QUERY_VECTOR
+    FROM SYSIBM.SYSDUMMY1
+)
+SELECT
+    C.CUSTOMER_SK,
+    SUBSTR(C.CHUNK_TYPE, 1, 15) AS CHUNK_TYPE,
+    SUBSTR(C.CHUNK_TEXT, 1, 150) AS CHUNK_PREVIEW,
+    CAST(VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) AS DECIMAL(8,2)) AS DISTANCE
+FROM CUSTOMER_TEXT_CHUNKS C
+CROSS JOIN QUERY_EMBEDDING Q
+WHERE C.EMBEDDING IS NOT NULL
+ORDER BY VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) ASC
 FETCH FIRST 10 ROWS ONLY;
 
 -- Made with Bob

@@ -1,0 +1,525 @@
+# Customer Semantic Search - Query Examples
+
+This document provides practical examples of semantic search queries and use cases.
+
+## Table of Contents
+
+1. [Basic Semantic Search](#basic-semantic-search)
+2. [Customer Discovery](#customer-discovery)
+3. [Filtered Search](#filtered-search)
+4. [Similar Customer Finding](#similar-customer-finding)
+5. [Multi-Aspect Search](#multi-aspect-search)
+6. [Business Intelligence Queries](#business-intelligence-queries)
+7. [Advanced Use Cases](#advanced-use-cases)
+
+## Basic Semantic Search
+
+### Example 1: Find Customers by Shopping Behavior
+
+```sql
+-- Find customers who frequently buy electronics
+WITH QUERY_EMBEDDING AS (
+    SELECT TO_EMBEDDING(
+        'Customer who frequently purchases electronics and technology products'
+        USING GRANITE30
+    ) AS QUERY_VECTOR
+    FROM SYSIBM.SYSDUMMY1
+)
+SELECT
+    C.CUSTOMER_SK,
+    C.CUSTOMER_ID,
+    C.CHUNK_TYPE,
+    SUBSTR(C.CHUNK_TEXT, 1, 200) AS CHUNK_PREVIEW,
+    VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) AS SIMILARITY_SCORE
+FROM CUSTOMER_TEXT_CHUNKS C
+CROSS JOIN QUERY_EMBEDDING Q
+WHERE C.EMBEDDING IS NOT NULL
+ORDER BY SIMILARITY_SCORE ASC
+FETCH FIRST 10 ROWS ONLY;
+```
+
+### Example 2: Find High-Value Customers
+
+```sql
+-- Find customers with high lifetime value and consistent spending
+WITH QUERY_EMBEDDING AS (
+    SELECT TO_EMBEDDING(
+        'Loyal customer with high lifetime value and regular monthly spending patterns',
+        'embedding_model'
+    ) AS QUERY_VECTOR
+    FROM SYSIBM.SYSDUMMY1
+)
+SELECT
+    C.CUSTOMER_SK,
+    C.CUSTOMER_ID,
+    SUBSTR(C.CHUNK_TEXT, 1, 150) AS PREVIEW,
+    VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) AS SIMILARITY
+FROM CUSTOMER_TEXT_CHUNKS C
+CROSS JOIN QUERY_EMBEDDING Q
+WHERE C.EMBEDDING IS NOT NULL
+AND C.CHUNK_TYPE = 'spending_summary'
+ORDER BY SIMILARITY ASC
+FETCH APPROX FIRST 15 ROWS ONLY;
+```
+
+## Customer Discovery
+
+### Example 3: Find Customers with Specific Interests
+
+```sql
+-- Find customers interested in fitness and wellness
+WITH QUERY_EMBEDDING AS (
+    SELECT TO_EMBEDDING(
+        'Customer interested in fitness, health, wellness, and sports products',
+        'embedding_model'
+    ) AS QUERY_VECTOR
+    FROM SYSIBM.SYSDUMMY1
+)
+SELECT 
+    C.CUSTOMER_SK,
+    C.CUSTOMER_ID,
+    C.CHUNK_TYPE,
+    SUBSTR(C.CHUNK_TEXT, 1, 200) AS PREVIEW,
+    VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) AS SIMILARITY
+FROM CUSTOMER_TEXT_CHUNKS C
+CROSS JOIN QUERY_EMBEDDING Q
+WHERE C.EMBEDDING IS NOT NULL
+AND C.CHUNK_TYPE = 'top_items'
+AND VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) < 40
+ORDER BY SIMILARITY ASC
+FETCH FIRST 20 ROWS ONLY;
+```
+
+### Example 4: Find Customers by Shopping Location Preference
+
+```sql
+-- Find customers who prefer shopping at large urban stores
+WITH QUERY_EMBEDDING AS (
+    SELECT TO_EMBEDDING(
+        'Customer who shops at large stores in urban downtown areas with many employees',
+        'embedding_model'
+    ) AS QUERY_VECTOR
+    FROM SYSIBM.SYSDUMMY1
+)
+SELECT 
+    C.CUSTOMER_SK,
+    C.CUSTOMER_ID,
+    SUBSTR(C.CHUNK_TEXT, 1, 200) AS PREVIEW,
+    VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) AS SIMILARITY
+FROM CUSTOMER_TEXT_CHUNKS C
+CROSS JOIN QUERY_EMBEDDING Q
+WHERE C.EMBEDDING IS NOT NULL
+AND C.CHUNK_TYPE = 'top_stores'
+ORDER BY SIMILARITY ASC
+FETCH FIRST 10 ROWS ONLY;
+```
+
+## Filtered Search
+
+### Example 5: Semantic Search with Geographic Filter
+
+```sql
+-- Find fitness enthusiasts in Illinois
+WITH QUERY_EMBEDDING AS (
+    SELECT TO_EMBEDDING(
+        'Customer who buys fitness equipment, workout clothes, and health products',
+        'embedding_model'
+    ) AS QUERY_VECTOR
+    FROM SYSIBM.SYSDUMMY1
+)
+SELECT 
+    C.CUSTOMER_SK,
+    C.CUSTOMER_ID,
+    CUST.C_FIRST_NAME || ' ' || CUST.C_LAST_NAME AS NAME,
+    CA.CA_CITY,
+    CA.CA_STATE,
+    SUBSTR(C.CHUNK_TEXT, 1, 150) AS PREVIEW,
+    VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) AS SIMILARITY
+FROM CUSTOMER_TEXT_CHUNKS C
+CROSS JOIN QUERY_EMBEDDING Q
+INNER JOIN CUSTOMER CUST ON C.CUSTOMER_SK = CUST.C_CUSTOMER_SK
+INNER JOIN CUSTOMER_ADDRESS CA ON CUST.C_CURRENT_ADDR_SK = CA.CA_ADDRESS_SK
+WHERE C.EMBEDDING IS NOT NULL
+AND CA.CA_STATE = 'IL'
+AND C.CHUNK_TYPE = 'top_items'
+ORDER BY SIMILARITY ASC
+FETCH FIRST 15 ROWS ONLY;
+```
+
+### Example 6: Semantic Search with Demographic Filter
+
+```sql
+-- Find tech-savvy customers with college education
+WITH QUERY_EMBEDDING AS (
+    SELECT TO_EMBEDDING(
+        'Customer who purchases technology, electronics, and smart devices',
+        'embedding_model'
+    ) AS QUERY_VECTOR
+    FROM SYSIBM.SYSDUMMY1
+)
+SELECT 
+    C.CUSTOMER_SK,
+    C.CUSTOMER_ID,
+    CD.CD_EDUCATION_STATUS,
+    CD.CD_GENDER,
+    SUBSTR(C.CHUNK_TEXT, 1, 150) AS PREVIEW,
+    VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) AS SIMILARITY
+FROM CUSTOMER_TEXT_CHUNKS C
+CROSS JOIN QUERY_EMBEDDING Q
+INNER JOIN CUSTOMER CUST ON C.CUSTOMER_SK = CUST.C_CUSTOMER_SK
+INNER JOIN CUSTOMER_DEMOGRAPHICS CD ON CUST.C_CURRENT_CDEMO_SK = CD.CD_DEMO_SK
+WHERE C.EMBEDDING IS NOT NULL
+AND CD.CD_EDUCATION_STATUS IN ('College', 'Bachelor', 'Graduate')
+ORDER BY SIMILARITY ASC
+FETCH FIRST 10 ROWS ONLY;
+```
+
+## Similar Customer Finding
+
+### Example 7: Find Customers Similar to a Specific Customer
+
+```sql
+-- Find customers similar to customer #1
+SELECT 
+    C2.CUSTOMER_SK AS SIMILAR_CUSTOMER,
+    C2.CUSTOMER_ID,
+    C2.CHUNK_TYPE,
+    SUBSTR(C2.CHUNK_TEXT, 1, 150) AS PREVIEW,
+    AVG(VECTOR_DISTANCE(C1.EMBEDDING, C2.EMBEDDING, EUCLIDEAN)) AS AVG_SIMILARITY
+FROM CUSTOMER_TEXT_CHUNKS C1
+INNER JOIN CUSTOMER_TEXT_CHUNKS C2 
+    ON C1.CUSTOMER_SK != C2.CUSTOMER_SK
+    AND C1.CHUNK_TYPE = C2.CHUNK_TYPE
+WHERE C1.CUSTOMER_SK = 1
+AND C1.EMBEDDING IS NOT NULL
+AND C2.EMBEDDING IS NOT NULL
+GROUP BY C2.CUSTOMER_SK, C2.CUSTOMER_ID, C2.CHUNK_TYPE, C2.CHUNK_TEXT
+ORDER BY AVG_SIMILARITY ASC
+FETCH FIRST 10 ROWS ONLY;
+```
+
+### Example 8: Find Similar Customers with Full Profile
+
+```sql
+-- Find similar customers with complete information
+WITH SIMILAR_CUSTOMERS AS (
+    SELECT 
+        C2.CUSTOMER_SK,
+        AVG(VECTOR_DISTANCE(C1.EMBEDDING, C2.EMBEDDING, EUCLIDEAN)) AS SIMILARITY
+    FROM CUSTOMER_TEXT_CHUNKS C1
+    INNER JOIN CUSTOMER_TEXT_CHUNKS C2 ON C1.CUSTOMER_SK != C2.CUSTOMER_SK
+    WHERE C1.CUSTOMER_SK = 1
+    AND C1.EMBEDDING IS NOT NULL
+    AND C2.EMBEDDING IS NOT NULL
+    GROUP BY C2.CUSTOMER_SK
+    ORDER BY SIMILARITY ASC
+    FETCH FIRST 5 ROWS ONLY
+)
+SELECT 
+    SC.CUSTOMER_SK,
+    CUST.C_CUSTOMER_ID,
+    CUST.C_FIRST_NAME || ' ' || CUST.C_LAST_NAME AS NAME,
+    CUST.C_EMAIL_ADDRESS,
+    CA.CA_CITY || ', ' || CA.CA_STATE AS LOCATION,
+    SC.SIMILARITY,
+    JSON_VALUE(CJD.JSON_DOCUMENT, '$.summary.net_lifetime_value') AS LIFETIME_VALUE
+FROM SIMILAR_CUSTOMERS SC
+INNER JOIN CUSTOMER CUST ON SC.CUSTOMER_SK = CUST.C_CUSTOMER_SK
+LEFT JOIN CUSTOMER_ADDRESS CA ON CUST.C_CURRENT_ADDR_SK = CA.CA_ADDRESS_SK
+LEFT JOIN CUSTOMER_JSON_DOCS CJD ON SC.CUSTOMER_SK = CJD.CUSTOMER_SK
+ORDER BY SC.SIMILARITY;
+```
+
+## Multi-Aspect Search
+
+### Example 9: Find Customers Matching Multiple Criteria
+
+```sql
+-- Find customers who match on multiple aspects
+WITH QUERY_EMBEDDING AS (
+    SELECT TO_EMBEDDING(
+        'Customer who returns items frequently and shops at multiple different stores',
+        'embedding_model'
+    ) AS QUERY_VECTOR
+    FROM SYSIBM.SYSDUMMY1
+)
+SELECT 
+    C.CUSTOMER_SK,
+    C.CUSTOMER_ID,
+    COUNT(DISTINCT C.CHUNK_TYPE) AS MATCHING_ASPECTS,
+    MIN(VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN)) AS BEST_MATCH,
+    AVG(VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN)) AS AVG_MATCH,
+    LISTAGG(C.CHUNK_TYPE, ', ') AS MATCHED_TYPES
+FROM CUSTOMER_TEXT_CHUNKS C
+CROSS JOIN QUERY_EMBEDDING Q
+WHERE C.EMBEDDING IS NOT NULL
+AND VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) < 50
+GROUP BY C.CUSTOMER_SK, C.CUSTOMER_ID
+HAVING COUNT(DISTINCT C.CHUNK_TYPE) >= 2
+ORDER BY BEST_MATCH ASC
+FETCH FIRST 10 ROWS ONLY;
+```
+
+### Example 10: Comprehensive Customer Profile Match
+
+```sql
+-- Find customers with similar overall profile
+WITH QUERY_EMBEDDING AS (
+    SELECT TO_EMBEDDING(
+        'Middle-aged professional with high income who shops regularly at premium stores and buys quality electronics and clothing',
+        'embedding_model'
+    ) AS QUERY_VECTOR
+    FROM SYSIBM.SYSDUMMY1
+),
+CUSTOMER_SCORES AS (
+    SELECT 
+        C.CUSTOMER_SK,
+        C.CUSTOMER_ID,
+        AVG(VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN)) AS OVERALL_SIMILARITY,
+        MIN(CASE WHEN C.CHUNK_TYPE = 'customer_info' 
+            THEN VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) END) AS INFO_SIMILARITY,
+        MIN(CASE WHEN C.CHUNK_TYPE = 'top_items' 
+            THEN VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) END) AS ITEMS_SIMILARITY,
+        MIN(CASE WHEN C.CHUNK_TYPE = 'top_stores' 
+            THEN VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) END) AS STORES_SIMILARITY
+    FROM CUSTOMER_TEXT_CHUNKS C
+    CROSS JOIN QUERY_EMBEDDING Q
+    WHERE C.EMBEDDING IS NOT NULL
+    GROUP BY C.CUSTOMER_SK, C.CUSTOMER_ID
+)
+SELECT 
+    CS.*,
+    CUST.C_FIRST_NAME || ' ' || CUST.C_LAST_NAME AS NAME,
+    CD.CD_EDUCATION_STATUS,
+    JSON_VALUE(CJD.JSON_DOCUMENT, '$.summary.net_lifetime_value') AS LIFETIME_VALUE
+FROM CUSTOMER_SCORES CS
+INNER JOIN CUSTOMER CUST ON CS.CUSTOMER_SK = CUST.C_CUSTOMER_SK
+LEFT JOIN CUSTOMER_DEMOGRAPHICS CD ON CUST.C_CURRENT_CDEMO_SK = CD.CD_DEMO_SK
+LEFT JOIN CUSTOMER_JSON_DOCS CJD ON CS.CUSTOMER_SK = CJD.CUSTOMER_SK
+ORDER BY CS.OVERALL_SIMILARITY ASC
+FETCH FIRST 10 ROWS ONLY;
+```
+
+## Business Intelligence Queries
+
+### Example 11: Customer Segmentation for Marketing
+
+```sql
+-- Identify customer segments for targeted marketing
+WITH SEGMENT_QUERIES AS (
+    SELECT 'Budget Shoppers' AS SEGMENT,
+           TO_EMBEDDING('Customer who looks for deals, discounts, and low prices', 'embedding_model') AS QUERY_VECTOR
+    FROM SYSIBM.SYSDUMMY1
+    UNION ALL
+    SELECT 'Premium Buyers',
+           TO_EMBEDDING('Customer who buys high-end premium products and luxury items' USING GRANITE30)
+    FROM SYSIBM.SYSDUMMY1
+    UNION ALL
+    SELECT 'Tech Enthusiasts',
+           TO_EMBEDDING('Customer who purchases latest technology and electronic gadgets' USING GRANITE30)
+    FROM SYSIBM.SYSDUMMY1
+)
+SELECT 
+    SQ.SEGMENT,
+    C.CUSTOMER_SK,
+    C.CUSTOMER_ID,
+    VECTOR_DISTANCE(C.EMBEDDING, SQ.QUERY_VECTOR, EUCLIDEAN) AS SEGMENT_SCORE
+FROM CUSTOMER_TEXT_CHUNKS C
+CROSS JOIN SEGMENT_QUERIES SQ
+WHERE C.EMBEDDING IS NOT NULL
+AND C.CHUNK_TYPE = 'top_items'
+AND VECTOR_DISTANCE(C.EMBEDDING, SQ.QUERY_VECTOR, EUCLIDEAN) < 40
+ORDER BY SQ.SEGMENT, SEGMENT_SCORE ASC;
+```
+
+### Example 12: Churn Risk Identification
+
+```sql
+-- Find customers with patterns similar to churned customers
+WITH CHURN_PATTERN AS (
+    SELECT TO_EMBEDDING(
+        'Customer with decreasing purchase frequency, increasing returns, and shopping at fewer stores',
+        'embedding_model'
+    ) AS QUERY_VECTOR
+    FROM SYSIBM.SYSDUMMY1
+)
+SELECT 
+    C.CUSTOMER_SK,
+    C.CUSTOMER_ID,
+    CUST.C_EMAIL_ADDRESS,
+    AVG(VECTOR_DISTANCE(C.EMBEDDING, CP.QUERY_VECTOR, EUCLIDEAN)) AS CHURN_RISK_SCORE,
+    JSON_VALUE(CJD.JSON_DOCUMENT, '$.summary.total_transactions') AS TOTAL_TRANSACTIONS,
+    JSON_VALUE(CJD.JSON_DOCUMENT, '$.summary.total_returns') AS TOTAL_RETURNS
+FROM CUSTOMER_TEXT_CHUNKS C
+CROSS JOIN CHURN_PATTERN CP
+INNER JOIN CUSTOMER CUST ON C.CUSTOMER_SK = CUST.C_CUSTOMER_SK
+LEFT JOIN CUSTOMER_JSON_DOCS CJD ON C.CUSTOMER_SK = CJD.CUSTOMER_SK
+WHERE C.EMBEDDING IS NOT NULL
+GROUP BY C.CUSTOMER_SK, C.CUSTOMER_ID, CUST.C_EMAIL_ADDRESS, 
+         CJD.JSON_DOCUMENT
+HAVING AVG(VECTOR_DISTANCE(C.EMBEDDING, CP.QUERY_VECTOR, EUCLIDEAN)) < 405
+ORDER BY CHURN_RISK_SCORE ASC
+FETCH FIRST 20 ROWS ONLY;
+```
+
+## Advanced Use Cases
+
+### Example 13: Cross-Sell Recommendations
+
+```sql
+-- Find customers likely to be interested in a new product category
+WITH PRODUCT_PROFILE AS (
+    SELECT TO_EMBEDDING(
+        'Customer who would be interested in smart home devices, IoT products, and home automation',
+        'embedding_model'
+    ) AS QUERY_VECTOR
+    FROM SYSIBM.SYSDUMMY1
+)
+SELECT 
+    C.CUSTOMER_SK,
+    C.CUSTOMER_ID,
+    CUST.C_EMAIL_ADDRESS,
+    SUBSTR(C.CHUNK_TEXT, 1, 150) AS CURRENT_INTERESTS,
+    VECTOR_DISTANCE(C.EMBEDDING, PP.QUERY_VECTOR, EUCLIDEAN) AS RECOMMENDATION_SCORE
+FROM CUSTOMER_TEXT_CHUNKS C
+CROSS JOIN PRODUCT_PROFILE PP
+INNER JOIN CUSTOMER CUST ON C.CUSTOMER_SK = CUST.C_CUSTOMER_SK
+WHERE C.EMBEDDING IS NOT NULL
+AND C.CHUNK_TYPE = 'top_items'
+AND VECTOR_DISTANCE(C.EMBEDDING, PP.QUERY_VECTOR, EUCLIDEAN) < 50
+-- Exclude customers who already bought smart home products
+AND C.CHUNK_TEXT NOT LIKE '%smart%'
+AND C.CHUNK_TEXT NOT LIKE '%IoT%'
+ORDER BY RECOMMENDATION_SCORE ASC
+FETCH FIRST 25 ROWS ONLY;
+```
+
+### Example 14: Lookalike Audience for Best Customers
+
+```sql
+-- Find customers similar to top 10% customers
+WITH TOP_CUSTOMERS AS (
+    SELECT C.C_CUSTOMER_SK
+    FROM CUSTOMER C
+    INNER JOIN STORE_SALES SS ON C.C_CUSTOMER_SK = SS.SS_CUSTOMER_SK
+    GROUP BY C.C_CUSTOMER_SK
+    HAVING SUM(SS.SS_EXT_SALES_PRICE) > (
+        SELECT PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY TOTAL_SPENDING)
+        FROM (
+            SELECT SUM(SS2.SS_EXT_SALES_PRICE) AS TOTAL_SPENDING
+            FROM STORE_SALES SS2
+            GROUP BY SS2.SS_CUSTOMER_SK
+        )
+    )
+),
+TOP_CUSTOMER_EMBEDDINGS AS (
+    SELECT EMBEDDING
+    FROM CUSTOMER_TEXT_CHUNKS
+    WHERE CUSTOMER_SK IN (SELECT C_CUSTOMER_SK FROM TOP_CUSTOMERS)
+    AND EMBEDDING IS NOT NULL
+)
+SELECT 
+    C.CUSTOMER_SK,
+    C.CUSTOMER_ID,
+    AVG(
+        (SELECT MIN(VECTOR_DISTANCE(C.EMBEDDING, TCE.EMBEDDING, EUCLIDEAN))
+         FROM TOP_CUSTOMER_EMBEDDINGS TCE)
+    ) AS SIMILARITY_TO_TOP_CUSTOMERS
+FROM CUSTOMER_TEXT_CHUNKS C
+WHERE C.EMBEDDING IS NOT NULL
+AND C.CUSTOMER_SK NOT IN (SELECT C_CUSTOMER_SK FROM TOP_CUSTOMERS)
+GROUP BY C.CUSTOMER_SK, C.CUSTOMER_ID
+ORDER BY SIMILARITY_TO_TOP_CUSTOMERS ASC
+FETCH FIRST 50 ROWS ONLY;
+```
+
+### Example 15: Batch Customer Matching
+
+```sql
+-- Find similar customers for multiple target customers at once
+WITH TARGET_CUSTOMERS AS (
+    SELECT C_CUSTOMER_SK, C_CUSTOMER_ID
+    FROM CUSTOMER
+    WHERE C_CUSTOMER_SK IN (1, 2, 3, 4, 5)
+)
+SELECT 
+    TC.C_CUSTOMER_SK AS SOURCE_CUSTOMER,
+    TC.C_CUSTOMER_ID AS SOURCE_ID,
+    C2.CUSTOMER_SK AS SIMILAR_CUSTOMER,
+    C2.CUSTOMER_ID AS SIMILAR_ID,
+    AVG(VECTOR_DISTANCE(C1.EMBEDDING, C2.EMBEDDING, EUCLIDEAN)) AS SIMILARITY
+FROM TARGET_CUSTOMERS TC
+INNER JOIN CUSTOMER_TEXT_CHUNKS C1 ON TC.C_CUSTOMER_SK = C1.CUSTOMER_SK
+INNER JOIN CUSTOMER_TEXT_CHUNKS C2 
+    ON C1.CUSTOMER_SK != C2.CUSTOMER_SK
+    AND C1.CHUNK_TYPE = C2.CHUNK_TYPE
+WHERE C1.EMBEDDING IS NOT NULL
+AND C2.EMBEDDING IS NOT NULL
+GROUP BY TC.C_CUSTOMER_SK, TC.C_CUSTOMER_ID, C2.CUSTOMER_SK, C2.CUSTOMER_ID
+HAVING AVG(VECTOR_DISTANCE(C1.EMBEDDING, C2.EMBEDDING, EUCLIDEAN)) < 30
+ORDER BY TC.C_CUSTOMER_SK, SIMILARITY ASC;
+```
+
+## Query Performance Tips
+
+1. **Use FETCH APPROX for fast approximate search**
+   ```sql
+   ORDER BY VECTOR_DISTANCE(EMBEDDING, query_vector, EUCLIDEAN)
+   FETCH APPROX FIRST 20 ROWS ONLY
+   ```
+
+2. **Use FETCH EXACT for brute-force exact search**
+   ```sql
+   ORDER BY VECTOR_DISTANCE(EMBEDDING, query_vector, EUCLIDEAN)
+   FETCH EXACT FIRST 20 ROWS ONLY
+   ```
+
+3. **Omit APPROX/EXACT to let Db2 choose automatically**
+   ```sql
+   FETCH FIRST 20 ROWS ONLY  -- Db2 uses APPROX if index exists
+   ```
+
+4. **Filter by chunk type when appropriate**
+   ```sql
+   WHERE CHUNK_TYPE = 'top_items'
+   ```
+
+5. **Combine with traditional filters**
+   ```sql
+   WHERE CA.CA_STATE = 'IL'
+   ```
+
+6. **Use CTEs for complex queries**
+   ```sql
+   WITH QUERY_EMBEDDING AS (...)
+   SELECT ... FROM ... CROSS JOIN QUERY_EMBEDDING
+   ```
+
+7. **Tune search parameters with optimizer hints**
+   ```sql
+   /* <OPTGUIDELINES> <IXSCAN TABLE='CUSTOMER_TEXT_CHUNKS'
+      SEARCH_LIST_SIZE='100' SEARCH_BEAM_WIDTH='4'/> </OPTGUIDELINES> */
+   ```
+
+8. **Ensure K <= SEARCH_LIST_SIZE**
+   ```sql
+   -- If SEARCH_LIST_SIZE=50, don't use FETCH FIRST 100
+   FETCH APPROX FIRST 50 ROWS ONLY  -- Good
+   ```
+
+9. **Run RUNSTATS for optimal query plans**
+   ```sql
+   RUNSTATS ON TABLE CUSTOMER_TEXT_CHUNKS AND INDEXES ALL
+   ```
+
+## Interpreting Similarity Scores
+
+With EUCLIDEAN distance (used in this project):
+
+- **0 - 20**: Very similar (nearly identical)
+- **20 - 50**: Similar (good match)
+- **50 - 100**: Somewhat similar (moderate match)
+- **100 - 200**: Loosely similar (weak match)
+- **200+**: Not similar (poor match)
+
+Note: Lower scores indicate higher similarity with Euclidean distance. The actual ranges depend on your embedding model's dimensionality (384 dimensions for Granite 30M).

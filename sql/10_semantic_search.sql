@@ -17,12 +17,13 @@
 -- ============================================================================
 -- This script demonstrates semantic search using approximate similarity search
 -- on the vector embeddings with the vector index
+-- This file combines all examples from 10.1 through 10.5
 -- ============================================================================
 
 SET SCHEMA CUSTOMER_SEARCH;
 
 -- ============================================================================
--- Example 1: Find Similar Customers by Natural Language Query
+-- Example 1: Basic Semantic Search
 -- ============================================================================
 -- Search for customers matching a natural language description
 -- The query text is converted to an embedding and compared with stored embeddings
@@ -43,29 +44,28 @@ WITH QUERY_EMBEDDING AS (
 )
 SELECT
     C.CUSTOMER_SK,
-    C.CUSTOMER_ID,
-    C.CHUNK_TYPE,
-    SUBSTR(C.CHUNK_TEXT, 1, 60) AS CHUNK_PREVIEW,
+    SUBSTR(C.CHUNK_TYPE, 1, 15) AS CHUNK_TYPE,
+    SUBSTR(C.CHUNK_TEXT, 1, 300) AS CHUNK_PREVIEW,
     CAST(VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) AS DECIMAL(8,2)) AS DISTANCE
 FROM CUSTOMER_TEXT_CHUNKS C
 CROSS JOIN QUERY_EMBEDDING Q
 WHERE C.EMBEDDING IS NOT NULL
 ORDER BY VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) ASC
-FETCH FIRST 10 ROWS ONLY;
+FETCH FIRST 6 ROWS ONLY;
 
 -- ============================================================================
--- Example 2: Approximate Similarity Search with Index
+-- Example 2: Approximate Search with Vector Index
 -- ============================================================================
--- 
--- OUTPUT: ============================================================================
--- OUTPUT: Example 2: Approximate search with vector index (faster)
--- OUTPUT: QUERY: "Customers who purchases electronics and technology products"
--- OUTPUT: ============================================================================
-
 -- Use APPROX keyword to leverage the vector index for faster search
 -- This is more efficient for large datasets
 
--- QUERY: "who purchases electronics and technology products"
+-- OUTPUT: ============================================================================
+-- OUTPUT: Example 2: Approximate search with vector index (faster)
+-- OUTPUT: QUERY: "Customer who purchases electronics and technology products"
+-- OUTPUT: Uses FETCH APPROX for faster search on large datasets
+-- OUTPUT: ============================================================================
+
+-- QUERY: "Customer who purchases electronics and technology products"
 -- EXPECTED RESULTS: Customers with high electronics/tech spending in their purchase history
 WITH QUERY_EMBEDDING AS (
     SELECT TO_EMBEDDING(
@@ -76,66 +76,66 @@ WITH QUERY_EMBEDDING AS (
 )
 SELECT
     C.CUSTOMER_SK,
-    C.CUSTOMER_ID,
-    C.CHUNK_TYPE,
-    SUBSTR(C.CHUNK_TEXT, 1, 60) AS CHUNK_PREVIEW,
+    SUBSTR(C.CHUNK_TYPE, 1, 15) AS CHUNK_TYPE,
+    SUBSTR(C.CHUNK_TEXT, 1, 100) AS CHUNK_PREVIEW,
     CAST(VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) AS DECIMAL(8,2)) AS DISTANCE
 FROM CUSTOMER_TEXT_CHUNKS C
 CROSS JOIN QUERY_EMBEDDING Q
 WHERE C.EMBEDDING IS NOT NULL
 ORDER BY VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) ASC
-FETCH APPROX FIRST 10 ROWS ONLY;
+FETCH APPROX FIRST 10 ROWS ONLY
+/* <OPTGUIDELINES> <IXSCAN TABLE='C' INDEX='IDX_CUSTOMER_EMBEDDINGS'/> </OPTGUIDELINES> */;
 
 -- ============================================================================
--- Example 3: Find Similar Customers to a Given Customer
+-- Example 3: Find Similar Customers
 -- ============================================================================
--- 
+-- Find customers similar to a specific customer by comparing their embeddings
+-- across all profile aspects
+
 -- OUTPUT: ============================================================================
 -- OUTPUT: Example 3: Find customers similar to a specific customer
 -- OUTPUT: QUERY: Find customers with similar profiles to customer SK=1
 -- OUTPUT: ============================================================================
 
--- Find customers similar to a specific customer (e.g., customer ID 1)
+-- First, show the reference customer's profile
+SELECT
+    C1.CUSTOMER_SK,
+    SUBSTR(C1.CHUNK_TEXT, 1, 600) AS CHUNK_PREVIEW
+FROM CUSTOMER_TEXT_CHUNKS C1
+WHERE C1.CUSTOMER_SK = 1
+AND C1.CHUNK_TYPE = 'top_items';
 
 -- QUERY: Find customers with similar profiles to customer SK=1
--- EXPECTED RESULTS: Customers with similar demographics, shopping patterns, and preferences
-WITH SIMILARITY_SCORES AS (
+-- EXPECTED RESULTS: Customers with similar shopping patterns
+WITH QUERY_EMBEDDING AS (
     SELECT
-        C2.CUSTOMER_SK,
-        C2.CUSTOMER_ID,
-        C2.CHUNK_ID,
-        AVG(VECTOR_DISTANCE(C1.EMBEDDING, C2.EMBEDDING, EUCLIDEAN)) AS AVG_DISTANCE
+        C1.EMBEDDING AS QUERY_VECTOR
     FROM CUSTOMER_TEXT_CHUNKS C1
-    INNER JOIN CUSTOMER_TEXT_CHUNKS C2
-        ON C1.CUSTOMER_SK != C2.CUSTOMER_SK
     WHERE C1.CUSTOMER_SK = 1
-    AND C1.EMBEDDING IS NOT NULL
-    AND C2.EMBEDDING IS NOT NULL
-    GROUP BY C2.CUSTOMER_SK, C2.CUSTOMER_ID, C2.CHUNK_ID
+    AND C1.CHUNK_TYPE = 'top_items'
 )
 SELECT
-    S.CUSTOMER_SK,
-    S.CUSTOMER_ID,
-    C.CHUNK_TYPE,
-    SUBSTR(C.CHUNK_TEXT, 1, 50) AS CHUNK_PREVIEW,
-    CAST(S.AVG_DISTANCE AS DECIMAL(8,2)) AS AVG_DIST
-FROM SIMILARITY_SCORES S
-INNER JOIN CUSTOMER_TEXT_CHUNKS C ON S.CHUNK_ID = C.CHUNK_ID
-ORDER BY S.AVG_DISTANCE ASC
-FETCH FIRST 10 ROWS ONLY;
+    C.CUSTOMER_SK,
+    CAST(VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) AS DECIMAL(8,2)) AS DISTANCE,
+    SUBSTR(C.CHUNK_TEXT, 1, 600) AS CHUNK_PREVIEW
+FROM CUSTOMER_TEXT_CHUNKS C
+CROSS JOIN QUERY_EMBEDDING Q
+WHERE C.EMBEDDING IS NOT NULL
+AND C.CUSTOMER_SK <> 1
+ORDER BY VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) ASC
+FETCH APPROX FIRST 3 ROWS ONLY;
 
 -- ============================================================================
 -- Example 4: Semantic Search with Filters
 -- ============================================================================
--- 
+-- Combine semantic search with traditional filters
+-- Example: Find customers who buy fitness products AND live in specific states
+
 -- OUTPUT: ============================================================================
 -- OUTPUT: Example 4: Semantic search with geographic filters
 -- OUTPUT: QUERY: "Customer interested in fitness, health, and wellness products"
 -- OUTPUT: FILTER: Only customers in IL, WI, IN (Midwest states)
 -- OUTPUT: ============================================================================
-
--- Combine semantic search with traditional filters
--- Example: Find customers who buy fitness products AND live in specific states
 
 -- QUERY: "Customer interested in fitness, health, and wellness products"
 -- FILTER: Only customers in IL, WI, IN (Midwest states)
@@ -167,40 +167,69 @@ FETCH APPROX FIRST 10 ROWS ONLY;
 -- ============================================================================
 -- Example 5: Multi-Aspect Customer Search
 -- ============================================================================
--- 
--- OUTPUT: ============================================================================
--- OUTPUT: Example 5: Multi-aspect customer search
--- OUTPUT: QUERY: "Customer who returns items frequently and shops at multiple stores"
--- OUTPUT: Shows customers matching on 2+ aspects (items, stores, spending)
--- OUTPUT: ============================================================================
-
 -- Search across different aspects of customer profiles
 -- Aggregate results from different chunk types
 
--- QUERY: "Customer who returns items frequently and shops at multiple stores"
--- EXPECTED RESULTS: Customers matching on multiple aspects (returns + store diversity)
--- Shows customers with matches across 2+ chunk types (items, stores, spending)
+-- OUTPUT: ============================================================================
+-- OUTPUT: Example 5: Multi-aspect customer search
+-- OUTPUT: Multiple queries demonstrating different search patterns
+-- OUTPUT: ============================================================================
+
+-- Query 5.1: Electronics and technology products
 WITH QUERY_EMBEDDING AS (
     SELECT TO_EMBEDDING(
-        'Customer who returns items frequently and shops at multiple stores'
+        'Customer who purchases electronics and technology products'
         USING GRANITE30
     ) AS QUERY_VECTOR
     FROM SYSIBM.SYSDUMMY1
 )
 SELECT
     C.CUSTOMER_SK,
-    C.CUSTOMER_ID,
-    COUNT(DISTINCT C.CHUNK_TYPE) AS ASPECTS,
-    CAST(MIN(VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN)) AS DECIMAL(8,2)) AS BEST_DIST,
-    CAST(AVG(VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN)) AS DECIMAL(8,2)) AS AVG_DIST,
-    SUBSTR(LISTAGG(C.CHUNK_TYPE, ',') WITHIN GROUP (ORDER BY C.CHUNK_TYPE), 1, 30) AS TYPES
+    SUBSTR(C.CHUNK_TYPE, 1, 15) AS CHUNK_TYPE,
+    SUBSTR(C.CHUNK_TEXT, 1, 150) AS CHUNK_PREVIEW,
+    CAST(VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) AS DECIMAL(8,2)) AS DISTANCE
 FROM CUSTOMER_TEXT_CHUNKS C
 CROSS JOIN QUERY_EMBEDDING Q
 WHERE C.EMBEDDING IS NOT NULL
-AND VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) < 100
-GROUP BY C.CUSTOMER_SK, C.CUSTOMER_ID
-HAVING COUNT(DISTINCT C.CHUNK_TYPE) >= 2
-ORDER BY BEST_DIST ASC
+ORDER BY VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) ASC
+FETCH FIRST 10 ROWS ONLY;
+
+-- Query 5.2: Electronics in Canadian stores
+WITH QUERY_EMBEDDING AS (
+    SELECT TO_EMBEDDING(
+        'Purchase for electronics and technology products in canadian stores'
+        USING GRANITE30
+    ) AS QUERY_VECTOR
+    FROM SYSIBM.SYSDUMMY1
+)
+SELECT
+    C.CUSTOMER_SK,
+    SUBSTR(C.CHUNK_TYPE, 1, 15) AS CHUNK_TYPE,
+    SUBSTR(C.CHUNK_TEXT, 1, 150) AS CHUNK_PREVIEW,
+    CAST(VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) AS DECIMAL(8,2)) AS DISTANCE
+FROM CUSTOMER_TEXT_CHUNKS C
+CROSS JOIN QUERY_EMBEDDING Q
+WHERE C.EMBEDDING IS NOT NULL
+ORDER BY VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) ASC
+FETCH FIRST 10 ROWS ONLY;
+
+-- Query 5.3: Technology products in Canada
+WITH QUERY_EMBEDDING AS (
+    SELECT TO_EMBEDDING(
+        'technology products Canada'
+        USING GRANITE30
+    ) AS QUERY_VECTOR
+    FROM SYSIBM.SYSDUMMY1
+)
+SELECT
+    C.CUSTOMER_SK,
+    SUBSTR(C.CHUNK_TYPE, 1, 15) AS CHUNK_TYPE,
+    SUBSTR(C.CHUNK_TEXT, 1, 150) AS CHUNK_PREVIEW,
+    CAST(VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) AS DECIMAL(8,2)) AS DISTANCE
+FROM CUSTOMER_TEXT_CHUNKS C
+CROSS JOIN QUERY_EMBEDDING Q
+WHERE C.EMBEDDING IS NOT NULL
+ORDER BY VECTOR_DISTANCE(C.EMBEDDING, Q.QUERY_VECTOR, EUCLIDEAN) ASC
 FETCH FIRST 10 ROWS ONLY;
 
 -- Made with Bob
